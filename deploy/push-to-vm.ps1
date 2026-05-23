@@ -48,10 +48,12 @@ function Read-YamlValue($content, $key) {
 $env = Read-EnvFile $localEnv
 $conf = Get-Content $localConf -Raw
 
-$openaiKey   = $env['OPENAI_API_KEY']
-$slackBot    = $env['SLACK_BOT_TOKEN']
-$slackApp    = $env['SLACK_APP_TOKEN']
-$slackUsers  = $env['SLACK_ALLOWED_USERS']
+$openaiKey      = $env['OPENAI_API_KEY']
+$slackBot       = $env['SLACK_BOT_TOKEN']
+$slackApp       = $env['SLACK_APP_TOKEN']
+$slackUsers     = $env['SLACK_ALLOWED_USERS']
+$slackHomeChannel     = $env['SLACK_HOME_CHANNEL']
+$slackHomeChannelName = $env['SLACK_HOME_CHANNEL_NAME']
 $googleKey   = Read-YamlValue $conf 'GOOGLE_MAPS_API_KEY'
 $slackChannel= Read-YamlValue $conf 'SLACK_CHANNEL'
 
@@ -101,6 +103,8 @@ OPENAI_API_KEY=$openaiKey
 SLACK_BOT_TOKEN=$slackBot
 SLACK_APP_TOKEN=$slackApp
 SLACK_ALLOWED_USERS=$slackUsers
+SLACK_HOME_CHANNEL=$slackHomeChannel
+SLACK_HOME_CHANNEL_NAME=$slackHomeChannelName
 "@
 
 # Write to temp files

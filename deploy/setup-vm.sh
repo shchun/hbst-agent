@@ -111,21 +111,21 @@ step "Starting PostgreSQL"
 cd "$MATZIP_DIR"
 sudo docker compose up -d db
 echo -n "  Waiting for DB"
-for i in $(seq 1 30); do
-    if sudo docker exec hermes_db pg_isready -U hermes -q 2>/dev/null; then
+for i in $(seq 1 40); do
+    if sudo docker exec hermes_db psql -U hermes -d hermes -c "SELECT 1" &>/dev/null; then
         echo " ready"
         break
     fi
     echo -n "."
-    sleep 2
-    [ "$i" -eq 30 ] && { echo " TIMEOUT"; exit 1; }
+    sleep 3
+    [ "$i" -eq 40 ] && { echo " TIMEOUT"; exit 1; }
 done
 info "PostgreSQL ready"
 
 # ── 9. Import CSV data ────────────────────────────────────────────────────────
 step "Importing matzip CSV data"
 cd "$MATZIP_DIR"
-"$MATZIP_DIR/mcp/.venv/bin/python" scripts/import_csv.py
+"$MATZIP_DIR/mcp/.venv/bin/python" "$MATZIP_DIR/scripts/import_csv.py"
 info "CSV data imported"
 
 # ── 10. Enable systemd lingering (needed for --user services on EC2) ──────────
