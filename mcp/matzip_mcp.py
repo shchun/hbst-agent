@@ -11,9 +11,9 @@ import math
 import logging
 import asyncio
 import threading
-import time
 import requests
 import psycopg2
+from contextlib import contextmanager
 from dotenv import load_dotenv
 
 # .env 로드 (로컬 실행 시)
@@ -44,6 +44,21 @@ server = Server("matzip")
 
 # ── 내부 유틸 ──────────────────────────────────────────────────────────────────
 
+@contextmanager
+def _db_cursor():
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        cur = conn.cursor()
+        yield cur
+        cur.close()
+    finally:
+        conn.close()
+
+
+def _json_response(obj) -> list[types.TextContent]:
+    return [types.TextContent(type="text", text=json.dumps(obj, ensure_ascii=False))]
+
+
 def _haversine(lat1, lng1, lat2, lng2) -> float:
     R = 6_371_000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -54,23 +69,20 @@ def _haversine(lat1, lng1, lat2, lng2) -> float:
 
 
 def _db_find_nearby(lat: float, lng: float, radius: int) -> list[dict]:
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT id, name, address, memo, lat, lng,
-               ST_Distance(location::geography,
-                           ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) AS dist
-        FROM matzip
-        WHERE ST_DWithin(location::geography,
-                         ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)
-        ORDER BY dist
-        """,
-        (lng, lat, lng, lat, radius),
-    )
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    with _db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, address, memo, lat, lng,
+                   ST_Distance(location::geography,
+                               ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) AS dist
+            FROM matzip
+            WHERE ST_DWithin(location::geography,
+                             ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)
+            ORDER BY dist
+            """,
+            (lng, lat, lng, lat, radius),
+        )
+        rows = cur.fetchall()
     return [
         {"id": r[0], "name": r[1], "address": r[2], "memo": r[3],
          "lat": r[4], "lng": r[5], "distance_m": int(r[6])}
@@ -199,49 +211,43 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 result = {"radius_used_m": r, "count": len(places), "places": places}
                 break
         log.info("find_nearby lat=%.4f lng=%.4f radius=%dm → %d개", lat, lng, result["radius_used_m"], result["count"])
-        return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
+        return _json_response(result)
 
     elif name == "geocode_area":
         area = arguments["area"]
         loc = _geocode_area(area)
         if loc:
             log.info("geocode_area '%s' → lat=%.4f lng=%.4f", area, loc[0], loc[1])
-            return [types.TextContent(type="text", text=json.dumps({"lat": loc[0], "lng": loc[1]}, ensure_ascii=False))]
+            return _json_response({"lat": loc[0], "lng": loc[1]})
         log.warning("geocode_area '%s' → 결과 없음", area)
-        return [types.TextContent(type="text", text=json.dumps({"error": f"'{area}' 위치를 찾을 수 없습니다"}, ensure_ascii=False))]
+        return _json_response({"error": f"'{area}' 위치를 찾을 수 없습니다"})
 
     elif name == "get_current_location":
         loc = _get_current_location()
         if loc:
             area = _reverse_geocode(loc[0], loc[1])
             log.info("get_current_location → lat=%.4f lng=%.4f (%s)", loc[0], loc[1], area)
-            return [types.TextContent(type="text", text=json.dumps({"lat": loc[0], "lng": loc[1], "area": area}, ensure_ascii=False))]
+            return _json_response({"lat": loc[0], "lng": loc[1], "area": area})
         log.warning("get_current_location → 위치 조회 실패")
-        return [types.TextContent(type="text", text=json.dumps({"error": "위치를 가져올 수 없습니다"}, ensure_ascii=False))]
+        return _json_response({"error": "위치를 가져올 수 없습니다"})
 
     elif name == "reverse_geocode":
         area = _reverse_geocode(arguments["lat"], arguments["lng"])
         log.info("reverse_geocode lat=%.4f lng=%.4f → '%s'", arguments["lat"], arguments["lng"], area)
-        return [types.TextContent(type="text", text=json.dumps({"area": area}, ensure_ascii=False))]
+        return _json_response({"area": area})
 
     elif name == "get_area_clusters":
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM matzip")
-        total = cur.fetchone()[0]
-        k = min(15, total)
-        cur.execute(
-            """
-            SELECT m1.lat, m1.lng, COUNT(m2.id) AS nearby_cnt
-            FROM matzip m1
-            JOIN matzip m2 ON ST_DWithin(m1.location::geography, m2.location::geography, 3000)
-            GROUP BY m1.id, m1.lat, m1.lng
-            ORDER BY nearby_cnt DESC
-            """,
-        )
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
+        with _db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT m1.lat, m1.lng, COUNT(m2.id) AS nearby_cnt
+                FROM matzip m1
+                JOIN matzip m2 ON ST_DWithin(m1.location::geography, m2.location::geography, 3000)
+                GROUP BY m1.id, m1.lat, m1.lng
+                ORDER BY nearby_cnt DESC
+                """,
+            )
+            rows = cur.fetchall()
 
         selected = []
         for lat, lng, cnt in rows:
@@ -253,12 +259,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         clusters = [{"lat": lat, "lng": lng, "count": int(cnt), "area": _reverse_geocode(lat, lng)}
                     for lat, lng, cnt in selected]
         log.info("get_area_clusters → %d개 클러스터: %s", len(clusters), [c["area"] for c in clusters])
-        return [types.TextContent(type="text", text=json.dumps(clusters, ensure_ascii=False))]
+        return _json_response(clusters)
 
     elif name == "check_and_notify":
         loc = _get_current_location()
         if not loc:
-            return [types.TextContent(type="text", text=json.dumps({"error": "위치 조회 실패"}, ensure_ascii=False))]
+            return _json_response({"error": "위치 조회 실패"})
         lat, lng = loc
         nearby = _db_find_nearby(lat, lng, int(os.environ.get("PROXIMITY_RADIUS_METERS", 500)))
 
@@ -274,9 +280,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         log.info("check_and_notify lat=%.4f lng=%.4f → 근처 %d개, 신규 알림 %d개: %s",
                  lat, lng, len(nearby), len(new_places), [p["name"] for p in new_places])
-        return [types.TextContent(type="text", text=json.dumps(
-            {"new_count": len(new_places), "notified": [p["name"] for p in new_places]}, ensure_ascii=False
-        ))]
+        return _json_response({"new_count": len(new_places), "notified": [p["name"] for p in new_places]})
 
     raise ValueError(f"Unknown tool: {name}")
 

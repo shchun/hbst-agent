@@ -53,41 +53,14 @@ python3.11 -m venv .venv
 .venv/bin/pip install -q -r requirements.txt
 info "MCP venv ready ($MATZIP_DIR/mcp/.venv)"
 
-# ── 5. Hermes config (Linux paths, placeholder secrets) ──────────────────────
+# ── 5. Hermes config (rendered from deploy/config.template.yaml) ─────────────
+# Path placeholder is filled in; secret placeholders are left for manual edit.
 step "Writing ~/.hermes/config.yaml"
 mkdir -p ~/.hermes
 
-cat > ~/.hermes/config.yaml << YAML
-model:
-  default: gpt-4o-mini
-  provider: custom
-  base_url: https://api.openai.com/v1
-agent:
-  max_turns: 60
-  verbose: false
-  reasoning_effort: none
-streaming:
-  enabled: false
-compression:
-  enabled: true
-  threshold: 0.5
-  target_ratio: 0.2
-  protect_last_n: 20
-mcp_servers:
-  matzip:
-    command: ${MATZIP_DIR}/mcp/.venv/bin/python
-    args:
-      - ${MATZIP_DIR}/mcp/matzip_mcp.py
-    env:
-      DATABASE_URL: "postgresql://hermes:hermes1234@localhost:5432/hermes"
-      GOOGLE_MAPS_API_KEY: "__REPLACE_GOOGLE_MAPS_API_KEY__"
-      SLACK_BOT_TOKEN: "__REPLACE_SLACK_BOT_TOKEN__"
-      SLACK_CHANNEL: "__REPLACE_SLACK_CHANNEL_ID__"
-      PROXIMITY_RADIUS_METERS: "500"
-      HOME_LAT: "37.4878"
-      HOME_LNG: "126.9803"
-YAML
-info "~/.hermes/config.yaml written"
+sed "s|__MATZIP_DIR__|${MATZIP_DIR}|g" \
+    "$MATZIP_DIR/deploy/config.template.yaml" > ~/.hermes/config.yaml
+info "~/.hermes/config.yaml written (replace __*_API_KEY__ / __SLACK_*__ values)"
 
 # ── 6. SOUL.md ────────────────────────────────────────────────────────────────
 cp "$MATZIP_DIR/mcp/SOUL.md" ~/.hermes/SOUL.md
@@ -141,7 +114,7 @@ echo "============================================================"
 echo ""
 echo "  # Step 1 — fill in your API keys"
 echo "  nano ~/.hermes/.env"
-echo "  nano ~/.hermes/config.yaml   # replace __REPLACE_* values"
+echo "  nano ~/.hermes/config.yaml   # replace __*_API_KEY__ / __SLACK_*__ values"
 echo ""
 echo "  # Step 2 — install Slack gateway as a systemd service"
 echo "  source ~/.bashrc"
