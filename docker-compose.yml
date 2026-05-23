@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: hermes_db
+    environment:
+      POSTGRES_USER: hermes
+      POSTGRES_PASSWORD: hermes1234
+      POSTGRES_DB: hermes
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  agent:
+    build: ./app
+    container_name: hermes_agent
+    environment:
+      DATABASE_URL: postgresql://hermes:hermes1234@db:5432/hermes
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      SLACK_CHANNEL: ${SLACK_CHANNEL}
+      CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-60}
+      PROXIMITY_RADIUS_METERS: ${PROXIMITY_RADIUS_METERS:-500}
+      AREA_RADIUS_METERS: ${AREA_RADIUS_METERS:-1000}
+      HOME_LAT: ${HOME_LAT:-}
+      HOME_LNG: ${HOME_LNG:-}
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
