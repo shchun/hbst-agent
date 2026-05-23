@@ -63,40 +63,18 @@ Write-Host "  SLACK_BOT_TOKEN : $($slackBot.Substring(0,15))..."
 Write-Host "  SLACK_CHANNEL   : $slackChannel"
 Write-Host "  GOOGLE_MAPS_KEY : $($googleKey.Substring(0,10))..."
 
-# ── Generate VM config.yaml (Linux paths) ────────────────────────────────────
+# ── Generate VM config.yaml from deploy/config.template.yaml ──────────────────
 $homeDir  = "/home/$User"
 $matzipDir = "$homeDir/matzip"
 
-$vmConfig = @"
-model:
-  default: gpt-4o-mini
-  provider: custom
-  base_url: https://api.openai.com/v1
-agent:
-  max_turns: 60
-  verbose: false
-  reasoning_effort: none
-streaming:
-  enabled: false
-compression:
-  enabled: true
-  threshold: 0.5
-  target_ratio: 0.2
-  protect_last_n: 20
-mcp_servers:
-  matzip:
-    command: $matzipDir/mcp/.venv/bin/python
-    args:
-      - $matzipDir/mcp/matzip_mcp.py
-    env:
-      DATABASE_URL: "postgresql://hermes:hermes1234@localhost:5432/hermes"
-      GOOGLE_MAPS_API_KEY: "$googleKey"
-      SLACK_BOT_TOKEN: "$slackBot"
-      SLACK_CHANNEL: "$slackChannel"
-      PROXIMITY_RADIUS_METERS: "500"
-      HOME_LAT: "37.4878"
-      HOME_LNG: "126.9803"
-"@
+$templatePath = Join-Path $PSScriptRoot "config.template.yaml"
+if (-not (Test-Path $templatePath)) { throw "Not found: $templatePath" }
+
+$vmConfig = (Get-Content $templatePath -Raw).
+    Replace('__MATZIP_DIR__', $matzipDir).
+    Replace('__GOOGLE_MAPS_API_KEY__', $googleKey).
+    Replace('__SLACK_BOT_TOKEN__', $slackBot).
+    Replace('__SLACK_CHANNEL__', $slackChannel)
 
 $vmEnv = @"
 OPENAI_API_KEY=$openaiKey
