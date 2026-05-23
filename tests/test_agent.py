@@ -171,14 +171,16 @@ class TestParseArea:
 class TestGeocodeArea:
     def test_returns_lat_lng_on_success(self):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = [{"lat": "37.5571", "lon": "126.9258"}]
+        mock_resp.json.return_value = {
+            "results": [{"geometry": {"location": {"lat": 37.5571, "lng": 126.9258}}}]
+        }
         with patch("requests.get", return_value=mock_resp):
             result = bot.geocode_area("홍대")
         assert result == pytest.approx((37.5571, 126.9258))
 
     def test_returns_none_on_empty_result(self):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = []
+        mock_resp.json.return_value = {"results": []}
         with patch("requests.get", return_value=mock_resp):
             result = bot.geocode_area("존재하지않는지역xyz")
         assert result is None

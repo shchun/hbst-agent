@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 AREA_RADIUS_METERS = int(os.environ.get("AREA_RADIUS_METERS", 1000))
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 
 NEARBY_KEYWORDS = {"주변", "근처", "근방", "이근처", "이근방", "여기", "내", "현재", "지금"}
 
@@ -35,17 +36,17 @@ def parse_area(text: str) -> str | None:
 
 
 def geocode_area(area: str) -> tuple[float, float] | None:
-    """지역명 → (위도, 경도). Nominatim 사용. 구·동 단위까지 전국 검색."""
+    """지역명 → (위도, 경도). Google Geocoding API 사용."""
     try:
         r = requests.get(
-            "https://nominatim.openstreetmap.org/search",
-            params={"q": f"{area} 대한민국", "format": "json", "limit": 1},
-            headers={"User-Agent": "hermes-matzip-agent"},
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"address": area, "language": "ko", "region": "KR", "key": GOOGLE_MAPS_API_KEY},
             timeout=5,
         )
-        data = r.json()
-        if data:
-            return float(data[0]["lat"]), float(data[0]["lon"])
+        results = r.json().get("results", [])
+        if results:
+            loc = results[0]["geometry"]["location"]
+            return float(loc["lat"]), float(loc["lng"])
     except Exception as e:
         log.error(f"지오코딩 실패 ({area}): {e}")
     return None
@@ -130,6 +131,41 @@ def build_blocks(places: list[dict], area_label: str, lat: float, lng: float, ra
     return blocks
 
 
+def _has_nearby_keyword(text: str) -> bool:
+    """'주변 맛집', '근처 맛집' 등 현재 위치 기반 질의인지 판단."""
+    text = re.sub(r"<@\w+>", "", text).strip()
+    m = re.search(r"(.+?)\s*맛집", text)
+    if m:
+        area = re.sub(r"\s*(근처|주변|근방|이근처|이근방)$", "", m.group(1).strip()).strip()
+        return area in NEARBY_KEYWORDS
+    return False
+
+
+def _show_area_buttons(say) -> None:
+    clusters = agent.get_area_clusters()
+    if not clusters:
+        say("저장된 맛집 데이터가 없어요.")
+        return
+    say(
+        text="어느 지역 맛집을 찾으시나요?",
+        blocks=[
+            {"type": "section", "text": {"type": "mrkdwn", "text": "어느 지역 맛집을 찾으시나요?"}},
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": c["label"]},
+                        "action_id": f"area_query_{i}",
+                        "value": f"{c['lat']}|{c['lng']}|{c['label']}",
+                    }
+                    for i, c in enumerate(clusters)
+                ],
+            },
+        ],
+    )
+
+
 def handle_query(text: str, say):
     if "맛집" not in text:
         say(
@@ -158,8 +194,7 @@ def handle_query(text: str, say):
             return
         lat, lng = loc
         area_label = area_name
-        places, radius = find_with_expanding_radius(lat, lng)
-    else:
+    elif _has_nearby_keyword(text):
         loc = agent.get_current_location()
         if loc is None:
             say(
@@ -179,6 +214,9 @@ def handle_query(text: str, say):
             return
         lat, lng = loc
         area_label = agent.reverse_geocode(lat, lng)
+    else:
+        _show_area_buttons(say)
+        return
 
     places, radius = find_with_expanding_radius(lat, lng)
     blocks = build_blocks(places, area_label, lat, lng, radius_m=radius)
@@ -199,6 +237,16 @@ def _register_handlers(app: App) -> None:
             and not event.get("subtype")
         ):
             handle_query(event.get("text", ""), say)
+
+    @app.action(re.compile(r"area_query_\d+"))
+    def handle_area_button(ack, body, say):
+        ack()
+        value = body["actions"][0]["value"]
+        lat_str, lng_str, label = value.split("|", 2)
+        lat, lng = float(lat_str), float(lng_str)
+        places, radius = find_with_expanding_radius(lat, lng)
+        blocks = build_blocks(places, label, lat, lng, radius_m=radius)
+        say(text=f"{label} 근처 맛집이에요!", blocks=blocks)
 
     @app.action(re.compile(r".*"))
     def handle_button_click(ack):

@@ -8,6 +8,7 @@ import os
 import time
 import math
 import logging
+import threading
 import requests
 import psycopg2
 from datetime import datetime
@@ -23,6 +24,7 @@ SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "#hermes")
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL_SECONDS", 60))
 RADIUS_METERS = int(os.environ.get("PROXIMITY_RADIUS_METERS", 500))
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 
 # 이미 알림 보낸 장소 추적 (재알림 방지)
 notified: set[int] = set()
@@ -143,19 +145,76 @@ def send_slack(places: list[dict], current_area: str):
 
 
 def reverse_geocode(lat: float, lng: float) -> str:
-    """위도경도 → 지역명 (카카오 API 없으면 좌표 그대로 반환)"""
+    """위도경도 → 지역명. Google Reverse Geocoding API 사용."""
     try:
         r = requests.get(
-            "https://nominatim.openstreetmap.org/reverse",
-            params={"lat": lat, "lon": lng, "format": "json"},
-            headers={"User-Agent": "hermes-matzip-agent"},
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"latlng": f"{lat},{lng}", "language": "ko", "key": GOOGLE_MAPS_API_KEY},
             timeout=5,
         )
-        addr = r.json().get("address", {})
-        parts = [addr.get(k) for k in ("suburb", "neighbourhood", "quarter", "city_district", "city") if addr.get(k)]
-        return " ".join(parts[:2]) if parts else f"{lat:.4f}, {lng:.4f}"
-    except Exception:
-        return f"{lat:.4f}, {lng:.4f}"
+        results = r.json().get("results", [])
+        for result in results:
+            by_type = {t: c["long_name"] for c in result["address_components"] for t in c["types"]}
+            for t in ("sublocality_level_2", "sublocality_level_1", "locality",
+                      "administrative_area_level_3", "administrative_area_level_2"):
+                if t in by_type:
+                    return by_type[t]
+    except Exception as e:
+        log.error(f"역지오코딩 실패: {e}")
+    return f"{lat:.4f}, {lng:.4f}"
+
+
+_clusters_cache: list[dict] | None = None
+_clusters_lock = threading.Lock()
+
+
+def get_area_clusters(show: int = 5, radius: int = 3_000) -> list[dict]:
+    """각 식당 기준 반경 radius(m) 내 식당 수가 가장 많은 지점을 탐욕적으로 show개 선택."""
+    global _clusters_cache
+    with _clusters_lock:
+        if _clusters_cache is not None:
+            return _clusters_cache
+
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            # 각 식당 기준 반경 내 식당 수 집계 (PostGIS self-join)
+            cur.execute(
+                """
+                SELECT m1.lat, m1.lng, COUNT(m2.id) AS nearby_cnt
+                FROM matzip m1
+                JOIN matzip m2
+                  ON ST_DWithin(m1.location::geography, m2.location::geography, %s)
+                GROUP BY m1.id, m1.lat, m1.lng
+                ORDER BY nearby_cnt DESC
+                """,
+                (radius,),
+            )
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+
+            # 탐욕적 선택: 이미 선택된 지점과 radius 이상 떨어진 곳만 추가
+            selected: list[tuple[float, float, int]] = []
+            for lat, lng, cnt in rows:
+                if all(haversine(lat, lng, s[0], s[1]) > radius for s in selected):
+                    selected.append((lat, lng, cnt))
+                    if len(selected) >= show:
+                        break
+
+            clusters = []
+            for lat, lng, cnt in selected:
+                label = reverse_geocode(lat, lng)
+                clusters.append({"lat": lat, "lng": lng, "label": label, "count": int(cnt)})
+
+            _clusters_cache = clusters
+            labels = [f"{c['label']}({c['count']}개)" for c in clusters]
+            log.info(f"핫스팟 {len(clusters)}개: {labels}")
+        except Exception as e:
+            log.error(f"클러스터링 실패: {e}")
+            _clusters_cache = []
+
+        return _clusters_cache
 
 
 def run():
