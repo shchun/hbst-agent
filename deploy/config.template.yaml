@@ -15,9 +15,9 @@ compression:
   protect_last_n: 20
 mcp_servers:
   matzip:
-    command: __MATZIP_DIR__/mcp/.venv/bin/python
+    command: __APP_DIR__/mcp/.venv/bin/python
     args:
-      - __MATZIP_DIR__/mcp/matzip_mcp.py
+      - __APP_DIR__/mcp/matzip_mcp.py
     env:
       DATABASE_URL: "postgresql://hermes:hermes1234@localhost:5432/hermes"
       GOOGLE_MAPS_API_KEY: "__GOOGLE_MAPS_API_KEY__"
@@ -26,3 +26,10 @@ mcp_servers:
       PROXIMITY_RADIUS_METERS: "500"
       HOME_LAT: "37.4878"
       HOME_LNG: "126.9803"
+  vault:
+    command: __APP_DIR__/mcp/.venv/bin/python
+    args:
+      - __APP_DIR__/mcp/vault_mcp.py
+    env:
+      VAULT_DIR: "__VAULT_DIR__"
+      VAULT_GIT_SYNC: "1"

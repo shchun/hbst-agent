@@ -10,6 +10,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "mcp"))
 os.environ.setdefault("DATABASE_URL", "postgresql://hermes:hermes1234@localhost:5432/hermes")
 os.environ.setdefault("SLACK_BOT_TOKEN", "xoxb-test-token")
 os.environ.setdefault("SLACK_CHANNEL", "#test")
+# vault_mcp 는 import 시점에 VAULT_DIR 를 요구 — 테스트에선 monkeypatch로 tmp 볼트로 교체
+os.environ.setdefault("VAULT_DIR", os.path.dirname(__file__))
+os.environ.setdefault("VAULT_GIT_SYNC", "0")
 
 DB_URL = os.environ["DATABASE_URL"]
 

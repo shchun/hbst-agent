@@ -18,7 +18,7 @@ on:
 env:
   EC2_USER: ubuntu
   EC2_HOST: ${{ secrets.EC2_HOST }}
-  MATZIP_DIR: /home/ubuntu/matzip
+  APP_DIR: /home/ubuntu/hbst-agent
 
 jobs:
   deploy:
@@ -48,12 +48,12 @@ jobs:
             --exclude='docs/' \
             --exclude='deploy/' \
             -e "ssh -i ~/.ssh/id_deploy" \
-            . "$EC2_USER@$EC2_HOST:$MATZIP_DIR/"
+            . "$EC2_USER@$EC2_HOST:$APP_DIR/"
 
       - name: Update MCP Python dependencies
         run: |
           ssh -i ~/.ssh/id_deploy "$EC2_USER@$EC2_HOST" \
-            "$MATZIP_DIR/mcp/.venv/bin/pip install -q --upgrade -r $MATZIP_DIR/mcp/requirements.txt"
+            "$APP_DIR/mcp/.venv/bin/pip install -q --upgrade -r $APP_DIR/mcp/requirements.txt"
 
       - name: Detect CSV changes
         id: csv
@@ -71,7 +71,7 @@ jobs:
           (github.event_name == 'push' && steps.csv.outputs.changed == 'true')
         run: |
           ssh -i ~/.ssh/id_deploy "$EC2_USER@$EC2_HOST" \
-            "cd $MATZIP_DIR && mcp/.venv/bin/python scripts/import_csv.py"
+            "cd $APP_DIR && mcp/.venv/bin/python scripts/import_csv.py"
 
       - name: Restart hermes-gateway
         run: |

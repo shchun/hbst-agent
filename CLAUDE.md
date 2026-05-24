@@ -1,15 +1,16 @@
-# Hermes 맛집 에이전트
+# Hermes 개인비서
 
-저장된 맛집 DB를 기반으로 현재 위치 근처에 있으면 Slack 알림을 보내고, Slack DM·멘션으로 지역명 검색에 응답하는 개인용 에이전트.
+개인 지식 베이스(옵시디언 볼트)와 맛집 DB를 검색·종합하고 기록하는 범용 개인비서.
+Slack DM·멘션에 응답하고, 현재 위치 근처 맛집은 프로액티브 알림을 보낸다. 맛집은 그 일부 기능.
 
 ## 아키텍처
 
 ```
-data/*.csv
-    ↓  scripts/import_csv.py
-PostgreSQL + PostGIS
-    ↓
-mcp/matzip_mcp.py  ← MCP 서버 (stdio)
+data/*.csv                        옵시디언 볼트 (git: 로컬 ↔ GitHub ↔ VM)
+    ↓ scripts/import_csv.py            ↓ (hermes_inbox만 write)
+PostgreSQL + PostGIS               mcp/vault_mcp.py  ← search_notes / capture_note
+    ↓                                  ↓
+mcp/matzip_mcp.py  ← MCP 서버 (stdio) ─┘
     ↓
 Hermes Agent (gpt-4o-mini)
     ↓
@@ -17,16 +18,20 @@ Slack 게이트웨이 (DM/멘션 응답 + cron 프로액티브 알림)
 ```
 
 - **DB**: PostgreSQL 15 + PostGIS 3.4 (`ST_DWithin`, `ST_MakePoint`)
+- **볼트**: 옵시디언 볼트를 git으로 동기화. Hermes는 `hermes_inbox/`에 새 파일만 생성(append-only), 기존 노트는 수정 안 함. `.hermesignore` 폴더는 검색 제외.
 - **위치**: `HOME_LAT`/`HOME_LNG` 환경변수 우선, 없으면 ip-api.com
 - **지오코딩**: Google Maps Geocoding API
 - **에이전트**: Hermes Agent + MCP 프로토콜 (stdio 서버)
 - **Slack**: Hermes 게이트웨이 Socket Mode
 
+상세 설계는 `docs/Plan_add_obsidian.md` 참고.
+
 ## 주요 파일
 
 | 파일 | 역할 |
 |------|------|
-| `mcp/matzip_mcp.py` | MCP 서버 — 6개 도구 (find_nearby, geocode_area 등) |
+| `mcp/matzip_mcp.py` | matzip MCP 서버 — 6개 도구 (find_nearby, geocode_area 등) |
+| `mcp/vault_mcp.py` | vault MCP 서버 — search_notes(grep), capture_note(동기 git commit+push) |
 | `mcp/SOUL.md` | Hermes 에이전트 페르소나 |
 | `mcp/hermes_config_template.yaml` | `~/.hermes/config.yaml` MCP 설정 참고용 |
 | `scripts/init.sql` | DB 스키마 (PostGIS extension + matzip 테이블) |
@@ -67,6 +72,8 @@ Get-Content "$env:USERPROFILE\AppData\Local\hermes\logs\mcp-stderr.log" -Wait
 | `GOOGLE_MAPS_API_KEY` | 지오코딩용 API 키 |
 | `HOME_LAT` / `HOME_LNG` | 고정 위치 좌표 |
 | `PROXIMITY_RADIUS_METERS` | 알림 반경 (기본 500m) |
+| `VAULT_DIR` | 옵시디언 볼트 경로 (vault MCP 서버) |
+| `VAULT_GIT_SYNC` | capture_note의 git commit+push (1=켬, 0=끔) |
 
 ## Hermes 설정 위치
 

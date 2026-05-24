@@ -4,7 +4,7 @@
 mcp_servers:
   matzip:
     command: "python"
-    args: ["C:/projects/matzip/mcp/matzip_mcp.py"]
+    args: ["C:/projects/hbst-agent/mcp/matzip_mcp.py"]
     env:
       DATABASE_URL: "${DATABASE_URL}"
       GOOGLE_MAPS_API_KEY: "${GOOGLE_MAPS_API_KEY}"
@@ -13,3 +13,9 @@ mcp_servers:
       PROXIMITY_RADIUS_METERS: "${PROXIMITY_RADIUS_METERS}"
       HOME_LAT: "${HOME_LAT}"
       HOME_LNG: "${HOME_LNG}"
+  vault:
+    command: "python"
+    args: ["C:/projects/hbst-agent/mcp/vault_mcp.py"]
+    env:
+      VAULT_DIR: "${VAULT_DIR}"
+      VAULT_GIT_SYNC: "${VAULT_GIT_SYNC}"

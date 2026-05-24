@@ -6,11 +6,11 @@
 #
 # Prerequisites:
 #   1. EC2 Ubuntu 22.04 instance running with SSH access
-#   2. matzip repo cloned on VM:
+#   2. hbst-agent repo cloned on VM:
 #        ssh -i key.pem -A ubuntu@IP
-#        git clone git@github.com:shchun/matzip.git ~/matzip
+#        git clone git@github.com:shchun/hbst-agent.git ~/hbst-agent
 #   3. Run this script from Windows to push secrets
-#   4. Then on VM: bash ~/matzip/deploy/setup-vm.sh
+#   4. Then on VM: bash ~/hbst-agent/deploy/setup-vm.sh
 # ============================================================
 
 param(
@@ -65,13 +65,15 @@ Write-Host "  GOOGLE_MAPS_KEY : $($googleKey.Substring(0,10))..."
 
 # ── Generate VM config.yaml from deploy/config.template.yaml ──────────────────
 $homeDir  = "/home/$User"
-$matzipDir = "$homeDir/matzip"
+$appDir = "$homeDir/hbst-agent"
+$vaultDir = "$homeDir/hbst-obsidian"
 
 $templatePath = Join-Path $PSScriptRoot "config.template.yaml"
 if (-not (Test-Path $templatePath)) { throw "Not found: $templatePath" }
 
 $vmConfig = (Get-Content $templatePath -Raw).
-    Replace('__MATZIP_DIR__', $matzipDir).
+    Replace('__APP_DIR__', $appDir).
+    Replace('__VAULT_DIR__', $vaultDir).
     Replace('__GOOGLE_MAPS_API_KEY__', $googleKey).
     Replace('__SLACK_BOT_TOKEN__', $slackBot).
     Replace('__SLACK_CHANNEL__', $slackChannel)
@@ -119,11 +121,11 @@ Next steps:
   1. SSH to VM (with agent forwarding to clone private repo):
        ssh -A -i "$KeyFile" $REMOTE
 
-  2. Clone matzip repo (if not done yet):
-       git clone git@github.com:shchun/matzip.git ~/matzip
+  2. Clone hbst-agent repo (if not done yet):
+       git clone git@github.com:shchun/hbst-agent.git ~/hbst-agent
 
   3. Run setup script:
-       bash ~/matzip/deploy/setup-vm.sh
+       bash ~/hbst-agent/deploy/setup-vm.sh
 
   4. Install gateway service:
        source ~/.bashrc

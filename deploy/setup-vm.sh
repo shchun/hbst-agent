@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ============================================================
 # Hermes Matzip — Ubuntu 22.04 EC2 Setup Script
-# Run once on a fresh instance after cloning the matzip repo.
+# Run once on a fresh instance after cloning the hbst-agent repo.
 #
-#   git clone git@github.com:shchun/matzip.git ~/matzip
-#   bash ~/matzip/deploy/setup-vm.sh
+#   git clone git@github.com:shchun/hbst-agent.git ~/hbst-agent
+#   bash ~/hbst-agent/deploy/setup-vm.sh
 # ============================================================
 set -euo pipefail
 
@@ -12,8 +12,21 @@ GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info() { echo -e "${GREEN}✓${NC} $*"; }
 step() { echo -e "\n${GREEN}==>${NC} $*"; }
 
-MATZIP_DIR="$HOME/matzip"
+APP_DIR="$HOME/hbst-agent"
 HERMES_AGENT_DIR="$HOME/hermes-agent"
+VAULT_DIR="$HOME/hbst-obsidian"
+# 'github-vault' 는 ~/.ssh/config 의 Host alias (볼트 전용 deploy key 와 연결).
+# 이 스크립트 실행 전 아래를 미리 세팅해 둘 것:
+#   ssh-keygen -t ed25519 -f ~/.ssh/hbst_obsidian -N "" -C "hermes-bot"
+#   cat ~/.ssh/hbst_obsidian.pub  → GitHub hbst-obsidian > Settings > Deploy keys
+#                                    (Allow write access 체크) 에 등록
+#   cat >> ~/.ssh/config <<'EOF'
+#   Host github-vault
+#       HostName github.com
+#       User git
+#       IdentityFile ~/.ssh/hbst_obsidian
+#   EOF
+VAULT_REPO="git@github-vault:shchun/hbst-obsidian.git"
 
 # ── 1. System packages ────────────────────────────────────────────────────────
 step "Installing system packages"
@@ -36,6 +49,23 @@ else
 fi
 info "hermes-agent ready"
 
+# ── 2.5 Clone Obsidian vault (private repo, bot write access) ────────────────
+# 봇이 hermes_inbox/ 에 push 하려면 hbst-obsidian 레포에 write 권한이 필요.
+# deploy key(쓰기 허용) 또는 fine-grained PAT를 미리 ~/.ssh 에 설정해 둘 것.
+step "Cloning Obsidian vault"
+if [ ! -d "$VAULT_DIR/.git" ]; then
+    git clone "$VAULT_REPO" "$VAULT_DIR" \
+        || echo "  (볼트 clone 실패 — 봇 deploy key/PAT 설정 후 수동 clone 필요)"
+else
+    git -C "$VAULT_DIR" pull --rebase --autostash || true
+fi
+# 봇 커밋 identity (커밋 메시지 hermes(source): … 와 짝)
+if [ -d "$VAULT_DIR/.git" ]; then
+    git -C "$VAULT_DIR" config user.name  "hermes-bot"
+    git -C "$VAULT_DIR" config user.email "hermes-bot@users.noreply.github.com"
+    info "Vault ready ($VAULT_DIR)"
+fi
+
 # ── 3. Install Hermes CLI ────────────────────────────────────────────────────
 step "Installing Hermes CLI"
 cd "$HERMES_AGENT_DIR"
@@ -47,23 +77,24 @@ info "Hermes CLI installed → $(hermes --version 2>/dev/null || echo 'check PAT
 
 # ── 4. MCP Python venv ────────────────────────────────────────────────────────
 step "Setting up MCP Python venv"
-cd "$MATZIP_DIR/mcp"
+cd "$APP_DIR/mcp"
 python3.11 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt
-info "MCP venv ready ($MATZIP_DIR/mcp/.venv)"
+info "MCP venv ready ($APP_DIR/mcp/.venv)"
 
 # ── 5. Hermes config (rendered from deploy/config.template.yaml) ─────────────
 # Path placeholder is filled in; secret placeholders are left for manual edit.
 step "Writing ~/.hermes/config.yaml"
 mkdir -p ~/.hermes
 
-sed "s|__MATZIP_DIR__|${MATZIP_DIR}|g" \
-    "$MATZIP_DIR/deploy/config.template.yaml" > ~/.hermes/config.yaml
+sed -e "s|__APP_DIR__|${APP_DIR}|g" \
+    -e "s|__VAULT_DIR__|${VAULT_DIR}|g" \
+    "$APP_DIR/deploy/config.template.yaml" > ~/.hermes/config.yaml
 info "~/.hermes/config.yaml written (replace __*_API_KEY__ / __SLACK_*__ values)"
 
 # ── 6. SOUL.md ────────────────────────────────────────────────────────────────
-cp "$MATZIP_DIR/mcp/SOUL.md" ~/.hermes/SOUL.md
+cp "$APP_DIR/mcp/SOUL.md" ~/.hermes/SOUL.md
 info "SOUL.md copied"
 
 # ── 7. .env template ─────────────────────────────────────────────────────────
@@ -81,7 +112,7 @@ fi
 
 # ── 8. PostgreSQL (Docker) ────────────────────────────────────────────────────
 step "Starting PostgreSQL"
-cd "$MATZIP_DIR"
+cd "$APP_DIR"
 sudo docker compose up -d db
 echo -n "  Waiting for DB"
 for i in $(seq 1 40); do
@@ -97,8 +128,8 @@ info "PostgreSQL ready"
 
 # ── 9. Import CSV data ────────────────────────────────────────────────────────
 step "Importing matzip CSV data"
-cd "$MATZIP_DIR"
-"$MATZIP_DIR/mcp/.venv/bin/python" "$MATZIP_DIR/scripts/import_csv.py"
+cd "$APP_DIR"
+"$APP_DIR/mcp/.venv/bin/python" "$APP_DIR/scripts/import_csv.py"
 info "CSV data imported"
 
 # ── 10. Enable systemd lingering (needed for --user services on EC2) ──────────
