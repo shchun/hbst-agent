@@ -60,6 +60,27 @@ class TestIsIgnored:
         assert vm._is_ignored("notes/secret.private.md", ["*.private.md"])
 
 
+# ── _obsidian_uri ─────────────────────────────────────────────────────────────
+
+class TestObsidianUri:
+    def test_encodes_vault_name_with_space(self, monkeypatch):
+        monkeypatch.setattr(vm, "VAULT_NAME", "My Gdrive Vault")
+        uri = vm._obsidian_uri("notes/foo.md")
+        assert uri == "obsidian://open?vault=My%20Gdrive%20Vault&file=notes%2Ffoo.md"
+
+    def test_roundtrips_korean_path(self, monkeypatch):
+        from urllib.parse import urlparse, parse_qs, unquote
+        monkeypatch.setattr(vm, "VAULT_NAME", "볼트")
+        uri = vm._obsidian_uri("레시피/가지튀김.md")
+        q = parse_qs(urlparse(uri).query)
+        assert unquote(q["vault"][0]) == "볼트"
+        assert unquote(q["file"][0]) == "레시피/가지튀김.md"
+
+    def test_backslashes_normalized(self, monkeypatch):
+        monkeypatch.setattr(vm, "VAULT_NAME", "V")
+        assert "%5C" not in vm._obsidian_uri("a\\b.md")  # \ → / 후 인코딩
+
+
 # ── _note_title / _make_snippet ───────────────────────────────────────────────
 
 class TestTitleAndSnippet:
@@ -79,12 +100,14 @@ class TestTitleAndSnippet:
 # ── _search_notes ─────────────────────────────────────────────────────────────
 
 class TestSearchNotes:
-    def test_finds_matching_note(self, vault):
+    def test_finds_matching_note(self, vault, monkeypatch):
+        monkeypatch.setattr(vm, "VAULT_NAME", "TestVault")
         _write(vault, "레시피/김밥.md", "# 김밥\n참치 김밥 만드는 법")
         results = vm._search_notes("참치", None, 20)
         assert len(results) == 1
         assert results[0]["path"] == "레시피/김밥.md"
         assert results[0]["title"] == "김밥"
+        assert results[0]["link"].startswith("obsidian://open?vault=TestVault&file=")
 
     def test_case_insensitive(self, vault):
         _write(vault, "note.md", "Hello World")

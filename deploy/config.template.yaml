@@ -33,3 +33,4 @@ mcp_servers:
     env:
       VAULT_DIR: "__VAULT_DIR__"
       VAULT_GIT_SYNC: "1"
+      VAULT_NAME: "My Gdrive Vault"

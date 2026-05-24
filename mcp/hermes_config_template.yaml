@@ -19,3 +19,4 @@ mcp_servers:
     env:
       VAULT_DIR: "${VAULT_DIR}"
       VAULT_GIT_SYNC: "${VAULT_GIT_SYNC}"
+      VAULT_NAME: "${VAULT_NAME}"

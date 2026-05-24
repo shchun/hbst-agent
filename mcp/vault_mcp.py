@@ -17,6 +17,7 @@ import fnmatch
 import logging
 import asyncio
 import subprocess
+import urllib.parse
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -35,6 +36,9 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 VAULT_DIR = os.path.abspath(os.environ["VAULT_DIR"])
+# obsidian:// 링크의 vault= 값. 옵시디언에 등록된 실제 볼트 이름과 일치해야 함.
+# VM은 폴더명(hbst-obsidian)이 사용자 볼트 이름과 다르므로 반드시 명시 설정할 것.
+VAULT_NAME = os.environ.get("VAULT_NAME") or os.path.basename(VAULT_DIR)
 INBOX_DIRNAME = "hermes_inbox"
 # git 동기화 on/off (테스트·오프라인 시 "0"으로 끄기)
 GIT_SYNC = os.environ.get("VAULT_GIT_SYNC", "1") != "0"
@@ -107,6 +111,13 @@ def _note_title(text: str, rel_path: str) -> str:
     return os.path.splitext(os.path.basename(rel_path))[0]
 
 
+def _obsidian_uri(rel_path: str) -> str:
+    """볼트 상대경로 → 클릭 시 옵시디언에서 노트가 열리는 obsidian:// 링크."""
+    vault = urllib.parse.quote(VAULT_NAME, safe="")
+    file = urllib.parse.quote(rel_path.replace("\\", "/"), safe="")
+    return f"obsidian://open?vault={vault}&file={file}"
+
+
 def _make_snippet(text: str, query: str, width: int = 80) -> str:
     """query가 처음 나오는 위치 주변을 잘라 한 줄 스니펫으로."""
     idx = text.lower().find(query.lower())
@@ -135,6 +146,7 @@ def _search_notes(query: str, folder: str | None, limit: int) -> list[dict]:
                 "path": rel_path,
                 "title": _note_title(text, rel_path),
                 "snippet": _make_snippet(text, query),
+                "link": _obsidian_uri(rel_path),
             })
             if len(results) >= limit:
                 break
@@ -278,7 +290,7 @@ def _capture_note(title: str, content: str, tags=None, source="agent", source_te
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write("\n".join(parts))
 
-    result = {"path": rel_path}
+    result = {"path": rel_path, "link": _obsidian_uri(rel_path)}
     if GIT_SYNC:
         result.update(_git_commit_push(rel_path, f"hermes({source}): {title}"))
     return result
