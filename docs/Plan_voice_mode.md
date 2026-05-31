@@ -132,11 +132,12 @@ hermes chat
 
 ## 체크리스트 (MVP 완료 기준)
 
-- [ ] `[voice]` 의존성 설치 + `sounddevice` 장치 인식 확인
-- [ ] config `stt`/`tts`/`voice` 블록 한국어로 설정
-- [ ] `/voice status` 정상, `/voice on`으로 한국어 STT 동작
-- [ ] 응답 TTS(edge ko-KR) 출력 확인
-- [ ] 음성으로 matzip / vault MCP 3종 동작 확인
+- [x] `[voice]` 의존성 설치 + `sounddevice` 장치 인식 확인 — uv로 설치, 입력 14·출력 16 장치 인식
+- [x] config `stt`/`tts`/`voice` 블록 한국어로 설정 — STT `small`+`language: ko`, TTS edge `ko-KR-SunHiNeural`, voice 블록
+- [x] STT↔TTS 파이프라인 비대화식 검증 — 한국어 합성→재인식 루프백, 언어 ko prob 1.00, Whisper `small`(~460MB) 사전 다운로드 완료
+- [ ] `/voice status` 정상, `/voice on`으로 한국어 STT 동작 — **사용자 마이크 직접 테스트 필요**
+- [ ] 응답 TTS(edge ko-KR) 출력 확인(CLI 안에서) — **사용자 테스트 필요**
+- [ ] 음성으로 matzip / vault MCP 3종 동작 확인 — **사용자 테스트 필요**
 - [ ] Slack 게이트웨이 영향 없음 확인(병행 실행 시)
 - [ ] 지연·정확도 허용 범위 확인 후 STT 모델/무음 파라미터 확정
 
