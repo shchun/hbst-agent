@@ -189,6 +189,25 @@ hbst-agent/
   - `[mcp-matzip, mcp-vault]`: 프롬프트 1k but 도구 거의 안 실림(`tool_turns=0`).
 - **결론**: Hermes의 `agent_init.py` toolset↔MCP 주입 로직(`enabled_toolsets` 필터와 MCP 주입의 상호작용)을 정독해 정확한 config를 도출해야 함. 모델 승급(gpt-4o-mini→gpt-4.1-mini)만으론 해결 안 됨(동일 오라우팅). **추측-재시작이 아니라 코드 정독 또는 VM(Slack 동작 환경)에서 검증 권장.**
 
+### 코드 정독 + 검증 최종 결론 (2026-05-31, option A 완료)
+
+**진짜 근본 원인: matzip/vault MCP 도구가 api_server 에이전트에 주입되지 않음.** (Slack/CLI 에이전트는 가짐 → find_nearby 호출 정상.)
+
+근거(결정적):
+- gpt-4o에게 "geocode_area·find_nearby를 **반드시 호출**하라"고 명시했는데도 그 도구를 못 부르고 `browser_navigate`를 쓰며 "도구 상태가 아니다"라고 응답. → api_server 에이전트의 도구 목록에 matzip MCP가 **없음**.
+- 모델 3종(gpt-4o-mini → gpt-4.1-mini → gpt-4o) 전부 실패. gpt-4o는 search_files 오라우팅은 안 하지만(똑똑) matzip이 없어 결국 실패. → **모델 문제 아님.**
+- `platform_toolsets: api_server: [mcp-matzip, mcp-vault]`(또는 `[matzip, vault]`) → 프롬프트 ~1k, 도구 0개 적재(`tool_turns=0`). 문서상으론 이 참조가 공식 지원(`toolsets-reference.md:123,133`)인데 실제론 안 실림.
+- `enabled_toolsets=None`(전체) → 내장 도구 14.5k는 실리지만 **matzip MCP는 그 안에도 없음**.
+
+**추정**: MCP 서버의 비동기 등록 타이밍 vs api_server 도구 해석/캐싱(`_tool_defs_cache`, `registry._generation`) 불일치, 또는 0.15.1 버전 특성. 프롬프트 캐싱은 동작(`cache≈97%`)하므로 전체 툴셋 비용 우려는 작음.
+
+**권장 다음 행동(로컬 추측 금지):**
+1. **VM에서 검증** — Slack+matzip이 실제로 도는 프로덕션 환경에서 api_server를 켜고 동일 테스트. 환경 차이가 원인을 드러낼 수 있음.
+2. **Hermes 이슈/문서 확인** — "MCP tools with api_server platform / not injected". 알려진 이슈/필요 설정 가능성.
+3. `custom_toolsets`(config.yaml, `toolsets-reference.md:139`)로 mcp 툴셋 묶기 재시도(타이밍 회피되는지).
+
+**로컬 실험 정리**: model은 `gpt-4o-mini`로 원복(파일). 실행 중 게이트웨이는 다음 재시작까지 직전 모델 사용. `platform_toolsets.api_server` 항목 제거됨. `API_SERVER_KEY`는 유지(api_server는 계속 켜둠).
+
 ### 로컬 실험 상태 (정리 필요)
 
 - `config.yaml`: `model.default = gpt-4.1-mini`, `platform_toolsets.api_server = [mcp-matzip, mcp-vault]`(도구 미적재 상태), `.env`에 `API_SERVER_KEY` 추가, 로컬 게이트웨이 실행 중.
