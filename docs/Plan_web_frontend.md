@@ -164,6 +164,21 @@ hbst-agent/
 
 ---
 
+## Step 1 검증 결과 (2026-05-31, 로컬)
+
+`API_SERVER_KEY`를 `.env`에 넣어 게이트웨이에서 api_server 활성화 → 로컬 검증 완료.
+
+- ✅ **두뇌 노출 동작**: `GET /v1/models` → `hermes-agent`. `POST /v1/chat/completions`(단순 질의) **7초, 200 OK**. OpenAI 호환 API로 에이전트 응답 확인.
+- ⚠️ **툴 라우팅·지연 문제 발견** (웹 품질의 핵심):
+  - 단순 "안녕"도 7초 + 시스템 프롬프트 `in≈14,458토큰` — 28개 플러그인 툴 설명이 다 실림(느림·고비용).
+  - 맛집 질의에서 gpt-4o-mini가 `mcp_matzip_find_nearby` 대신 **`search_files`(홈 디렉터리 스캔, 65초×2)** 를 골라 타임아웃.
+  - `search_files`는 `_HERMES_CORE_TOOLS`에 포함 → `hermes-slack`/`hermes-api-server` 등 **기본 툴셋 전부에 존재**. 토글만으론 못 뺌.
+
+**→ 설계 반영 (웹 페르소나):**
+1. **커스텀 경량 툴셋** — `matzip`/`vault` MCP + 최소만, `search_files`·`terminal`·`process`·파일·브라우저 제외. 프롬프트 축소 → 빠름·저렴·오라우팅↓. (toolsets.py는 코어라 업데이트 시 덮임 → config 레벨 정의 방법 확인 필요.)
+2. **페르소나 강화** — SOUL이 "맛집/노트 질문 → 해당 MCP 우선" 명시.
+3. **모델 승급 검토** — 라우팅 신뢰도가 곧 UX. gpt-4o-mini보다 상위 모델 고려.
+
 ## 음성 MVP와의 관계
 
 - 두뇌·MCP·메모리·STT(Whisper)·TTS 결정은 **그대로 재사용**(`Plan_voice_mode.md` 결과).
