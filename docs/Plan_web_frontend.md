@@ -175,9 +175,24 @@ hbst-agent/
   - `search_files`는 `_HERMES_CORE_TOOLS`에 포함 → `hermes-slack`/`hermes-api-server` 등 **기본 툴셋 전부에 존재**. 토글만으론 못 뺌.
 
 **→ 설계 반영 (웹 페르소나):**
-1. **커스텀 경량 툴셋** — `matzip`/`vault` MCP + 최소만, `search_files`·`terminal`·`process`·파일·브라우저 제외. 프롬프트 축소 → 빠름·저렴·오라우팅↓. (toolsets.py는 코어라 업데이트 시 덮임 → config 레벨 정의 방법 확인 필요.)
+1. **커스텀 경량 툴셋** — `matzip`/`vault` MCP + 최소만, `search_files`·`terminal`·`process`·파일·브라우저 제외. 프롬프트 축소 → 빠름·저렴·오라우팅↓.
 2. **페르소나 강화** — SOUL이 "맛집/노트 질문 → 해당 MCP 우선" 명시.
-3. **모델 승급 검토** — 라우팅 신뢰도가 곧 UX. gpt-4o-mini보다 상위 모델 고려.
+3. **모델 승급 검토** — 라우팅 신뢰도가 곧 UX.
+
+### 후속 조사 결과 (toolset 디테일, 미해결)
+
+- MCP 도구는 코드상 **`mcp-<서버>` 전용 toolset**으로 등록됨(`tools/mcp_tool.py:3235` `f"mcp-{name}"`) → `mcp-matzip`, `mcp-vault`. `hermes-api-server` 등 일반 툴셋엔 **미포함**.
+- `platform_toolsets`로 api_server 툴셋을 바꾸면 **프롬프트 크기는 확실히 통제됨**(전체 14,458토큰 → `[mcp-matzip, mcp-vault]` 지정 시 ~1,006토큰).
+- **그러나** 시도한 config 어느 것도 "matzip+vault 도구가 실제로 실리고 호출되는" 상태를 못 만듦:
+  - 미지정(기본): 전체 주입(matzip 있음) but search_files 오선택.
+  - `[hermes-api-server]`: matzip 제외.
+  - `[mcp-matzip, mcp-vault]`: 프롬프트 1k but 도구 거의 안 실림(`tool_turns=0`).
+- **결론**: Hermes의 `agent_init.py` toolset↔MCP 주입 로직(`enabled_toolsets` 필터와 MCP 주입의 상호작용)을 정독해 정확한 config를 도출해야 함. 모델 승급(gpt-4o-mini→gpt-4.1-mini)만으론 해결 안 됨(동일 오라우팅). **추측-재시작이 아니라 코드 정독 또는 VM(Slack 동작 환경)에서 검증 권장.**
+
+### 로컬 실험 상태 (정리 필요)
+
+- `config.yaml`: `model.default = gpt-4.1-mini`, `platform_toolsets.api_server = [mcp-matzip, mcp-vault]`(도구 미적재 상태), `.env`에 `API_SERVER_KEY` 추가, 로컬 게이트웨이 실행 중.
+- 깔끔히 가려면 api_server platform_toolsets 항목을 정정하거나 제거 필요.
 
 ## 음성 MVP와의 관계
 
