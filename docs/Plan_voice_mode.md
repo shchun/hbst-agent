@@ -135,11 +135,12 @@ hermes chat
 - [x] `[voice]` 의존성 설치 + `sounddevice` 장치 인식 확인 — uv로 설치, 입력 14·출력 16 장치 인식
 - [x] config `stt`/`tts`/`voice` 블록 한국어로 설정 — STT `small`+`language: ko`, TTS edge `ko-KR-SunHiNeural`, voice 블록
 - [x] STT↔TTS 파이프라인 비대화식 검증 — 한국어 합성→재인식 루프백, 언어 ko prob 1.00, Whisper `small`(~460MB) 사전 다운로드 완료
-- [ ] `/voice status` 정상, `/voice on`으로 한국어 STT 동작 — **사용자 마이크 직접 테스트 필요**
-- [ ] 응답 TTS(edge ko-KR) 출력 확인(CLI 안에서) — **사용자 테스트 필요**
-- [ ] 음성으로 matzip / vault MCP 3종 동작 확인 — **사용자 테스트 필요**
-- [ ] Slack 게이트웨이 영향 없음 확인(병행 실행 시)
-- [ ] 지연·정확도 허용 범위 확인 후 STT 모델/무음 파라미터 확정
+- [x] `/voice status` 정상, `/voice on`으로 한국어 STT 동작 — 사용자 마이크 테스트 완료
+- [x] 응답 TTS(edge ko-KR) 출력 확인(CLI 안에서)
+- [x] 음성으로 matzip 동작 확인 — "종로구 맛집" 음성 질의 → DB 응답 (DB 재기동 후)
+- [x] 지연·정확도 허용 범위 확정 — 로컬 medium ~10초로 사용성 X → OpenAI STT(~2.5초)로 전환
+- [ ] vault MCP(search_notes/capture_note) 음성 동작 확인 — 후속
+- [ ] Slack 게이트웨이 영향 없음 확인(병행 실행 시) — 후속
 
 ---
 
@@ -149,6 +150,26 @@ hermes chat
 2. **TTS 프로바이더**: `edge`(무료, MVP 기본) vs `openai`(품질↑·유료·키 필요). edge로 시작 권장.
 3. **녹음 트리거**: 푸시투토크(`record_key`) vs 무음 자동감지(`silence_*`). 둘 다 설정돼 있으니 사용해보고 선호 확정.
 4. **`auto_tts`**: 항상 읽기 vs 필요할 때만. MVP는 on으로 체감 후 결정.
+
+---
+
+## 실제 구현 결과 (2026-05-31, MVP 동작 확인)
+
+데스크톱 음성 MVP가 **동작 확인됨**. 계획 대비 실측으로 바뀐 결정:
+
+| 항목 | 계획 | 실제 (확정) | 이유 |
+|------|------|-------------|------|
+| **STT** | 로컬 faster-whisper `small`/`medium` | **OpenAI Whisper** (`stt.provider: openai`, `whisper-1`, `language: ko`) | 이 노트북 NVIDIA GPU 없음(Intel Iris Xe) → 로컬 `medium`은 CPU에서 ~10초로 사용성 없음. OpenAI는 ~2.5초, 기존 `OPENAI_API_KEY` 재사용(새 키 불필요), ~$0.006/분. 로컬 `medium`+의존성은 오프라인 폴백으로 보존 |
+| **TTS** | edge ko-KR | **edge `ko-KR-SunHiNeural`** (무료) 그대로 | 품질 충분, 무료 |
+| **무음 임계값** | `silence_threshold: 200` | **`50`** | 마이크 입력이 작아(말소리 peak RMS~164) 200이면 녹음이 "too quiet"로 버려짐 → 50으로 통과 |
+| **녹음 트리거** | 푸시투토크/무음감지 | 무음 자동감지(`silence_*`) 사용 | — |
+| **Hermes 버전** | 0.14.0 | **0.15.1** (`hermes update`) | 861 커밋 밀려 업데이트. 음성 의존성·config 무손실 생존 |
+| **DB(맛집)** | 기존 컨테이너 | **재생성 + 1754행 재임포트** | 기존 `hermes_db`가 개명 전 경로(`c:/projects/matzip/...init.sql`) 마운트라 시작 불가 → 제거 후 새 compose로 재생성, `import_csv.py`로 적재 |
+
+**알려진 이슈 (후속):**
+- gpt-4o-mini가 `bg-review`(백그라운드 리뷰/보조) 스레드에서 HTTP 400 `Encrypted content is not supported`(param=include). 메인 대화엔 비치명적. 거슬리면 보조 모델 변경/해당 기능 비활성 검토. (0.15.1에 `invalid_encrypted_content` 재시도 로직은 있으나 이 변종은 미커버 가능)
+- `scripts/import_csv.py` 마지막 성공 메시지의 `✅` 이모지가 cp949 콘솔에서 `UnicodeEncodeError`(데이터 적재엔 무영향, 장식용). 한 줄 수정으로 정리 가능.
+- **운영 주의**: DB 컨테이너는 `restart: unless-stopped`라 Docker Desktop이 떠 있으면 자동 시작. Docker 자체가 꺼져 있으면 맛집 조회 실패 → 재부팅 후 Docker Desktop 실행 확인 필요.
 
 ---
 
